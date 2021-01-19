@@ -1,0 +1,200 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no"><title>CSV 欄位資料文字形狀取代程式</title><script async src="https://www.googletagmanager.com/gtag/js?id=UA-39556213-3"></script><script>window.dataLayer = window.dataLayer || []
+function gtag () { dataLayer.push(arguments) } // eslint-disable-line
+gtag('js', new Date())
+gtag('config', 'UA-39556213-3')</script><script>(function () {
+  const hostname = location.host.split(':')[0]
+  if (hostname === 'localhost') document.write(`<script src="http://${hostname}:35729/livereload.js?snipver=1"></` + 'script>')
+})()</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@sweetalert2/theme-default@3/default.min.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4/dist/css/bootstrap.min.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4/css/font-awesome.min.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1/themes/prism-tomorrow.min.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@9/dist/sweetalert2.min.css"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&amp;display=swap"><style>[v-cloak] {
+  display: none; }
+
+#app .input-group-text {
+  width: 90px; }
+
+#unmatch-shapes {
+  font-size: 12px; }
+</style></head><body><div class="container text-monospace" id="app" v-cloak><h2 class="my-3">CSV 欄位資料文字形狀取代程式</h2><div class="input-group input-group-sm mb-3"><div class="input-group-prepend"><span class="input-group-text justify-content-center">匯入資料</span></div><textarea class="form-control" type="url" v-model="i.csvImport"></textarea></div><div class="input-group input-group-sm mb-3"><div class="input-group-prepend"><span class="input-group-text justify-content-center">處理規則</span></div><select class="form-control" v-model="i.csvRules"><option value="https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hVRMRBaRrSIoJrnGdh9X1OS28cWzRhAFuZfgUY-OWCDf_tv6U9i64Dt0HYiHbsVAyRneAfC2M4dB/pub?gid=0&amp;single=true&amp;output=csv">小型車平日第一小時臨停費用</option><option value="https://docs.google.com/spreadsheets/d/e/2PACX-1vT8hVRMRBaRrSIoJrnGdh9X1OS28cWzRhAFuZfgUY-OWCDf_tv6U9i64Dt0HYiHbsVAyRneAfC2M4dB/pub?gid=778840937&amp;single=true&amp;output=csv">市話手機免付費電話</option></select></div><div class="row"><div class="col input-group input-group-sm mb-3"><div class="input-group-prepend"><span class="input-group-text justify-content-center">匯入欄位</span></div><input class="form-control" type="text" v-model="i.from"></div><div class="col input-group input-group-sm mb-3"><div class="input-group-prepend"><span class="input-group-text justify-content-center">匯出欄位</span></div><input class="form-control" type="text" v-model="i.to"></div></div><button class="btn btn-sm btn-outline-primary mb-3" type="button" @click="btnUnmatch">步驟 1: 尋找還沒有寫規則的文字形狀</button><button class="btn btn-sm btn-outline-success mb-3 ml-2" type="button" @click="btnExport">步驟 2: 匯出處理過的 CSV</button></div><script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script><script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script><script src="https://cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script><script src="https://cdn.jsdelivr.net/npm/json5@2/dist/index.min.js"></script><script src="https://cdn.jsdelivr.net/npm/lodash@4/lodash.min.js"></script><script src="https://cdn.jsdelivr.net/npm/papaparse@5/papaparse.min.js"></script><script src="https://cdn.jsdelivr.net/npm/popper.js@1/dist/umd/popper.min.js"></script><script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-core.min.js"></script><script src="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/autoloader/prism-autoloader.min.js"></script><script src="https://cdn.jsdelivr.net/npm/qs@6/dist/qs.min.js"></script><script src="https://cdn.jsdelivr.net/npm/sweetalert2@9"></script><script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.min.js"></script><!-- bootstrap require jquery and pupper--><script src="https://cdn.jsdelivr.net/npm/bootstrap@4/dist/js/bootstrap.min.js"></script><script src="https://cdn.jsdelivr.net/npm/moment@2/moment.min.js"></script><script src="https://cdn.jsdelivr.net/npm/moment@2/locale/zh-tw.min.js"></script><script>/* global moment */
+const vm = new Vue({ // eslint-disable-line
+  el: '#app',
+  data: {
+    parkings: [],
+    ready: false,
+    rules: {},
+    i: {
+      csvImport: '',
+      csvRules: '',
+      from: '',
+      to: '',
+    },
+  },
+  async mounted () {
+    // 自動儲存功能
+    try {
+      const saved = JSON5.parse(localStorage.getItem(location.pathname))
+      if (saved) this.$set(this, 'i', { ...this.i, ...saved })
+    } catch (err) {}
+    this.$watch('i', () => {
+      localStorage.setItem(location.pathname, JSON5.stringify(this.i))
+    }, { deep: true })
+
+    moment.locale('zh-tw')
+    this.ready = true
+  },
+  computed: {
+    allUnmatchShapes () {
+      let shapes = _.groupBy(_.map(this.parkings, parking => {
+        const from = this.strNormalize(_.get(parking, this.i.from))
+        const shape = this.strShape(from)
+        return { shape, from }
+      }), 'shape')
+      shapes = _.mapValues(shapes, rows => _.uniqBy(rows, 'from'))
+      return _.omit(shapes, _.keys(this.rules))
+    },
+  },
+  methods: {
+    async btnUnmatch () {
+      try {
+        this.showLoading('載入中…', '正在尋找還沒有寫規則的文字形狀')
+        this.validateInput()
+        // 抓取資料
+        await Promise.all([
+          this.getCsvImport(),
+          this.getCsvRules(),
+        ])
+        const shapes = _.groupBy(_.map(this.parkings, parking => {
+          const from = this.strNormalize(_.get(parking, this.i.from))
+          const shape = this.strShape(from)
+          return { shape, from }
+        }), 'shape')
+        const rows = _.map(_.omit(shapes, _.keys(this.rules)), (row, shape) => ({
+          shape,
+          count: row.length,
+          sample: _.first(row).from,
+        }))
+        if (!rows.length) {
+          return Swal.fire({ icon: 'success', title: '全部規則都建立過囉！' })
+        }
+        // 轉成 csv
+        const csv = Papa.unparse(rows, { header: true })
+        const blobUrl = this.strToBlobUrl(csv, 'text/csv')
+        // 顯示下載網址
+        await this.showCsvUrl(`CSV 檔案中有 ${rows.length} 筆紀錄`, blobUrl)
+      } catch (err) {
+        console.error(err)
+        Swal.fire({ icon: 'error', text: err.message, title: '發生錯誤' })
+      }
+    },
+    async btnExport () {
+      try {
+        this.showLoading('載入中…', '正在產生 CSV')
+        this.validateInput()
+        // 抓取資料
+        await Promise.all([
+          this.getCsvImport(),
+          this.getCsvRules(),
+        ])
+        // 取代資料
+        const rows = _.map(this.parkings, row => {
+          const from = this.strNormalize(_.get(row, this.i.from))
+          const rule = _.get(this.rules, this.strShape(from))
+          return {
+            ...row,
+            [this.i.to]: this.strRuleReplace(from, rule),
+          }
+        })
+        // 轉成 csv
+        const csv = Papa.unparse(rows, { header: true })
+        const blobUrl = this.strToBlobUrl(csv, 'text/csv')
+        // 顯示下載網址
+        await this.showCsvUrl(`CSV 檔案中有 ${rows.length} 筆紀錄`, blobUrl)
+      } catch (err) {
+        console.error(err)
+        Swal.fire({ icon: 'error', text: err.message, title: '發生錯誤' })
+      }
+    },
+    async getCsvImport () {
+      this.parkings = await this.getCsv(`https://cors-anywhere.herokuapp.com/${this.i.csvImport}`)
+    },
+    async getCsvRules () {
+      let rules = await this.getCsv(`https://cors-anywhere.herokuapp.com/${this.i.csvRules}`)
+      rules = _.filter(rules, rule => rule.pattern.length)
+      rules = _.map(rules, rule => ({
+        ...rule,
+        pattern: new RegExp(rule.pattern),
+      }))
+      this.rules = _.keyBy(rules, 'shape')
+    },
+    async getCsv (url) {
+      const csv = _.trim(_.get(await axios.get(url, {
+        params: { cachebust: new Date() / 3e4 },
+      }), 'data'))
+      return _.get(Papa.parse(csv, {
+        encoding: 'utf8',
+        header: true,
+      }), 'data', [])
+    },
+    async showCsvUrl (title, url) {
+      await Swal.fire({
+        allowOutsideClick: false,
+        focusConfirm: false,
+        html: `<a class="btn btn-success" target="_blank" href="${url}" download="${moment().format('YYYY-MM-DD HHmmss')}.csv">請點此下載 CSV 檔案</a>`,
+        icon: 'success',
+        title,
+      })
+    },
+    strToBlobUrl (str, type) {
+      const blob = new Blob([str], { type })
+      return URL.createObjectURL(blob)
+    },
+    validateInput () {
+      _.each({ // 資料檢查
+        csvImport: '匯入資料',
+        csvRules: '處理規則',
+        from: '匯入欄位',
+        to: '匯出欄位',
+      }, (v, k) => {
+        if (!_.get(this.i, k)) throw new Error(`「${v}」是必填欄位`)
+      })
+    },
+    showLoading (title, text) {
+      Swal.fire({
+        title,
+        text,
+        allowOutsideClick: false,
+        showConfirmButton: false,
+        onBeforeOpen: () => { Swal.showLoading() },
+      })
+    },
+    hideLoading () {
+      Swal.close()
+    },
+    strNormalize: (() => {
+      const CHAR_MAP = _.zipObject('０１２３４５６７８９：；（）～〜。\n'.split(''), '0123456789:;()~~;;'.split(''))
+      const strtr = (str, charmap) => _.map(str, c => _.get(charmap, [c], c)).join('')
+      return str => {
+        if (!_.isString(str)) return ''
+        str = _.trim(str) // 移除前後空格
+        str = strtr(str, CHAR_MAP) // 字元對應
+        str = str.replaceAll(/,(\d{3})/g, '$1') // 移除數字的千位逗號
+        str = str.replaceAll(/(?<=\d)\s+(?=\d)/g, ';') // 如果空格前後是數字就換成分號
+        str = str.replaceAll(/\s+/g, '') // 移除空格
+        str = str.replaceAll(/;+/g, ';') // 移除重複的分號
+        str = str.replaceAll(/;$/g, '') // 移除尾端的分號
+        return str
+      }
+    })(),
+    strShape (str) {
+      if (!_.isString(str)) return ''
+      str = str.replaceAll(/\d/g, '0') // 將數字全部取代成 0
+      return str
+    },
+    strRuleReplace (str, rule) {
+      try {
+        if (!_.isString(str) || !rule) return ''
+        return str.replace(rule.pattern, rule.replacement)
+      } catch (err) {
+        console.log({ str, rule, err })
+        return ''
+      }
+    },
+  },
+})</script></body></html>
